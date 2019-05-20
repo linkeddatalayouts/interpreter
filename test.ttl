@@ -1,0 +1,121 @@
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix lidl: <https://linkeddatalayouts.github.io/vocabularies/lidl.ttl#> .
+@prefix ppm:	<http://ppm.example.com/ns#> .
+
+
+##################################################
+# PPM Image Layout
+##################################################
+
+ppm:ImageLayout
+  a lidl:Composite ;
+  rdfs:label "ImageLayout" ;
+  lidl:endianness lidl:LittleEndian ;
+  lidl:attribute ppm:Header , ppm:ImageData .
+
+ppm:Header
+  a lidl:Attribute ;
+  rdfs:label "Header" ;
+  lidl:order 0 ;
+  lidl:count 1 ;
+  lidl:layout ppm:HeaderLayout .
+
+ppm:ImageData
+  a lidl:Attribute ;
+  rdfs:label "ImageData" ;
+  lidl:order 1;
+  lidl:count 1 ;
+  lidl:layout ppm:ImageDataLayout .
+
+##################################################
+# PPM Header Layout
+##################################################
+
+ppm:HeaderLayout
+  a lidl:Composite ;
+  rdfs:label "HeaderLayout" ;
+  lidl:attribute ppm:Magic , _:width , _:height , ppm:MaxColorValue .
+
+ppm:Magic
+  a lidl:Attribute ;
+  rdfs:label "Magic" ;
+  lidl:order 0 ;
+  lidl:count 2 ;
+  lidl:layout lidl:ASCII ;
+  lidl:value "P6" .
+
+_:width
+  a lidl:Attribute  ;
+  rdfs:label "Width" ;
+  lidl:order 1 ;
+  lidl:count 1 ;
+  lidl:layout lidl:UInt32 .
+
+_:height
+  a lidl:Attribute  ;
+  rdfs:label "Height" ;
+  lidl:order 2 ;
+  lidl:count 1 ;
+  lidl:layout lidl:UInt32 .
+
+ppm:MaxColorValue
+  a lidl:Attribute  ;
+  rdfs:label "MaxColorValue" ;
+  lidl:order 3 ;
+  lidl:count 1 ;
+  lidl:layout lidl:UInt8 .
+
+##################################################
+# PPM ImageData Layout
+##################################################
+
+ppm:ImageDataLayout
+  a lidl:Composite ;
+  rdfs:label "ImageDataLayout" ;
+  lidl:attribute [
+      a lidl:Attribute  ;
+      rdfs:label "PixelsAttribute" ;
+      lidl:order 0 ;
+      lidl:count [ lidl:mul ( _:width _:height ) ] ;
+      lidl:layout ppm:Pixel
+  ] .
+
+ppm:Pixel
+  a lidl:Composite ;
+  rdfs:label "Pixel" ;
+  lidl:attribute [
+    a lidl:Attribute  ;
+    rdfs:label "SubPixelsAttribute" ;
+    lidl:order 0;
+    lidl:count 3 ;
+    lidl:layout lidl:UInt8
+  ] .
+
+
+
+#predef
+lidl:UInt8
+  rdfs:label "An 8-bit unsigned integer" ;
+  a lidl:Atomic ;
+  lidl:byteSize 1 ;
+  lidl:bitSize 8 ;
+  lidl:datatype xsd:unsignedByte .
+
+lidl:UInt32
+  rdfs:label "A 32-bit unsigned integer" ;
+  a lidl:Atomic ;
+  lidl:byteSize 4 ;
+  lidl:bitSize 32 ;
+  lidl:datatype xsd:unsignedInt .
+
+lidl:ASCII
+  rdfs:label "An ASCII character." ;
+  rdfs:isDefinedBy <https://doi.org/10.1145%2F366959.366961> ;
+  rdfs:seeAlso <https://en.wikipedia.org/wiki/ASCII> ;
+  a lidl:Atomic ;
+  lidl:byteSize 1 ;
+  lidl:bitSize 8 ;
+  lidl:datatype xsd:string .
