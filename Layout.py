@@ -104,12 +104,22 @@ def create_element_with_type(element_class, focus_node, graph):
     return element
 
 
+all_lidl_elements = dict()
+
+
+def get_element(uri_ref):
+    if uri_ref in all_lidl_elements:
+        return all_lidl_elements[uri_ref]
+
+    return None
+
 class LidlElement(object):
     def __init__(self, rdf_node):
         object.__init__(self)
         self.uuid = uuid4()
         self.rdf_node = rdf_node
         self.label = None
+        all_lidl_elements[rdf_node] = self
 
     def from_rdf(self, focus_node, graph):
         self.label = graph.value(focus_node, RDFS.label)

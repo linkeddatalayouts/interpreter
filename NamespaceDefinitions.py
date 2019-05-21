@@ -85,13 +85,13 @@ class RDFNS:
         termType = URIRef(NS + "termType")
         IRI = URIRef(NS + "IRI")
         BlankNode = URIRef(NS + "BlankNode")
-        RRclass = URIRef(NS + "class")
+        rrClass = URIRef(NS + "class")
 
         predicateObjectMap = URIRef(NS + "predicateObjectMap")
         predicate = URIRef(NS + "predicate")
         objectMap = URIRef(NS + "objectMap")
 
-        reference = URIRef(NS + "reference")
+
         constant = URIRef(NS + "constant")
 
     class RML:
@@ -100,4 +100,5 @@ class RDFNS:
         logicalSource = URIRef(NS + "logicalSource")
         source = URIRef(NS + "source")
         referenceFormulation = URIRef(NS + "referenceFormulation")
+        reference = URIRef(NS + "reference")
 
