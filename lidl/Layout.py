@@ -1,9 +1,9 @@
 from uuid import uuid4
 from enum import Enum
-from rdflib import Graph, URIRef, Namespace, Literal
-from rdflib.namespace import RDF, RDFS, OWL
+from rdflib.namespace import RDF, RDFS
+from lidl import ValueInstance
 
-from NamespaceDefinitions import *
+from lidl.NamespaceDefinitions import *
 
 
 class Endianness(Enum):
@@ -14,6 +14,8 @@ class Endianness(Enum):
 
 
 createdElements = dict()
+
+global_attribute_scope = set()
 
 
 def remove_literal(type, literal):
@@ -113,27 +115,46 @@ def get_element(uri_ref):
 
     return None
 
+
 class LidlElement(object):
     def __init__(self, rdf_node):
         object.__init__(self)
         self.uuid = uuid4()
         self.rdf_node = rdf_node
         self.label = None
+        self.contains_matching = None
         all_lidl_elements[rdf_node] = self
 
     def from_rdf(self, focus_node, graph):
         self.label = graph.value(focus_node, RDFS.label)
 
 
+class AttributeScope(object):
+    def __init__(self):
+        self.scope = dict()
+
+    def is_unique(self,attribute):
+        if attribute in self.scope:
+            return len(self.scope[attribute]) == 1
+        else:
+            return False
+
+    def add(self,layout,attribute):
+        if attribute not in self.scope:
+            self.scope[attribute] = []
+
+        self.scope[attribute].append(layout)
+
+
 class Layout(LidlElement):
     def __init__(self, rdf_node):
         LidlElement.__init__(self, rdf_node)
         self.endianness = Endianness.UNDEFINED_ENDIAN
-        self.uri = 0
 
         self.staticBitSize = None
         self.staticByteSize = None
         self.static = None
+        self.attribute_scope = None
 
     def from_rdf(self, focus_node, graph):
         super(Layout, self).from_rdf(focus_node, graph)
@@ -148,6 +169,9 @@ class Layout(LidlElement):
 
     def compute_static(self):
         raise Exception("you cannot do a static check on an untyped layout")
+
+    def build_attribute_scope(self):
+        raise Exception("you cannot build a scope on an untyped layout")
 
 
 class AtomicLayout(Layout):
@@ -182,7 +206,11 @@ class AtomicLayout(Layout):
 
     def compute_static(self):
         self.static = True
+        self.contains_matching = False
         return True
+
+    def build_attribute_scope(self, scope):
+        return
 
 
 class Attribute(LidlElement):
@@ -197,6 +225,8 @@ class Attribute(LidlElement):
         self.value = None
         self.value_node = None
         self.static = None
+        self.referenced_by = None
+        self.layout_scopes = None
 
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
@@ -206,6 +236,9 @@ class Attribute(LidlElement):
         self.count_node  = graph.value(focus_node, RDFNS.LIDL.count)
         self.value_node   = graph.value(focus_node, RDFNS.LIDL.value)
         self.layout_nodes = list(graph.objects(focus_node, RDFNS.LIDL.layout))
+
+        if type(self.order) is not None:
+            self.order = int(self.order)
 
         if type(self.count_node) is Literal:
             self.count = remove_literal(int, self.count_node)
@@ -225,33 +258,48 @@ class Attribute(LidlElement):
             return self.static
 
         self.static = self.count is not None and (type(self.count_node) is Literal or self.count.compute_static())
-
+        self.contains_matching = self.value is not None
         for layout in self.layouts:
             self.static &=  layout.compute_static() and self.static \
                                                    and layout.staticBitSize == self.layouts[0].staticBitSize \
                                                    and layout.staticByteSize == self.layouts[0].staticByteSize
 
+        for layout in self.layouts:
+            self.contains_matching |= layout.contains_matching
+
         return self.static
+
+    def build_attribute_scope(self, scope):
+
+        if len(self.layouts) == 1 and type(self.count) is int and self.count == 1:
+            self.layouts[0].build_attribute_scope(scope)
+            return
+
+        self.layout_scopes = []
+
+        for layout in self.layouts:
+            new_scope = AttributeScope()
+            self.layout_scopes.append(new_scope)
+            layout.build_attribute_scope(new_scope)
 
 
 class CompositeLayout(Layout):
     def __init__(self, rdf_node):
         Layout.__init__(self, rdf_node)
-        self.attributeNodes = []
+        self.attribute_nodes = []
         self.ordered_attributes = []
-        self.unordered_attributes = []
 
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
 
-        self.attributeNodes = list(graph.objects(focus_node, RDFNS.LIDL.attribute))
+        self.attribute_nodes = list(graph.objects(focus_node, RDFNS.LIDL.attribute))
 
-        for attribute_node in self.attributeNodes:
+        for attribute_node in self.attribute_nodes:
             attribute = create_element(attribute_node, graph, [Attribute])
             if attribute.order is not None:
                 self.ordered_attributes.append(attribute)
             else:
-                self.unordered_attributes.append(attribute)
+                raise Exception("attribute without order not allowed")
 
         self.ordered_attributes.sort(key=lambda attr: attr.order)
 
@@ -260,8 +308,10 @@ class CompositeLayout(Layout):
             return self.static
 
         self.static = True
+        self.contains_matching = False
         for attribute in self.ordered_attributes:
             self.static &= attribute.compute_static()
+            self.contains_matching |= attribute.contains_matching
 
         if self.static:
             self.staticByteSize = 0
@@ -271,7 +321,18 @@ class CompositeLayout(Layout):
                 self.staticBitSize += attribute_layout.staticBitSize * attribute.count
                 self.staticByteSize += attribute_layout.staticByteSize * attribute.count
 
+
         return self.static
+
+
+    def build_attribute_scope(self, scope):
+
+        for attr in self.ordered_attributes:
+            attr.build_attribute_scope(scope)
+            scope.add(self,attr)
+
+        self.attribute_scope = scope
+
 
 
 class Expression(LidlElement):
@@ -327,6 +388,7 @@ class Expression(LidlElement):
         return False #todo think about that
 
 
+
 class ExpressionAdd(Expression):
     rdf_property = RDFNS.LIDL.add
     min_args = 2
@@ -337,8 +399,13 @@ class ExpressionAdd(Expression):
     def from_rdf(self, focus_node, graph):
         Expression.from_rdf(self, focus_node, graph)
 
-    def compute(self, instance):
-        pass
+    def compute(self, argument_list):
+        value = argument_list[0]
+        for num, arg in enumerate(argument_list):
+            if num == 1:
+                continue
+            value += arg
+        return value
 
 
 class ExpressionMinus(Expression):
@@ -355,8 +422,16 @@ class ExpressionMinus(Expression):
         if self.arguments.len() > 2:
             raise Exception("Minus Expression takes only 2 arguments")
 
-    def compute(self, instance):
-        pass
+    def compute(self, argument_list):
+        value = argument_list[0].python_value
+        for num, arg in enumerate(argument_list):
+            if num == 1:
+                continue
+            value -= arg.python_value
+
+        result = ValueInstance()
+        value.set_python_value(value)
+        return result
 
 
 class ExpressionMul(Expression):
@@ -366,5 +441,33 @@ class ExpressionMul(Expression):
     def __init__(self, rdf_node):
         Expression.__init__(self, rdf_node)
 
-    def compute(self, instance):
-        pass
+    def compute(self, argument_list):
+        value = argument_list[0].python_value
+        for num, arg in enumerate(argument_list):
+            if num == 1:
+                continue
+            value *= arg.python_value
+
+        result = ValueInstance()
+        value.set_python_value(value)
+        return result
+
+
+class ExpressionDiv(Expression):
+    rdf_property = RDFNS.LIDL.mul
+    min_args = 2
+    max_args = 2
+
+    def __init__(self, rdf_node):
+        Expression.__init__(self, rdf_node)
+
+    def compute(self, argument_list):
+        value = argument_list[0].python_value
+        for num, arg in enumerate(argument_list):
+            if num == 1:
+                continue
+            value /= arg.python_value
+
+        result = ValueInstance()
+        value.set_python_value(value)
+        return result

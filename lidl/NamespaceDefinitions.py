@@ -66,6 +66,25 @@ class RDFNS:
         OR              = URIRef(NS + "OR")
         NOT             = URIRef(NS + "NOT")
 
+
+        # predefined atomic
+        Bit         = URIRef(NS + "Bit")
+        Byte        = URIRef(NS + "Byte")
+        ByteBoolean = URIRef(NS + "ByteBoolean")
+        UInt8       = URIRef(NS + "UInt8")
+        Int8        = URIRef(NS + "Int8")
+        UInt16      = URIRef(NS + "UInt16")
+        Int16       = URIRef(NS + "Int16")
+        UInt32      = URIRef(NS + "UInt32")
+        Int32       = URIRef(NS + "Int32")
+        UInt64      = URIRef(NS + "UInt64")
+        Int64       = URIRef(NS + "Int64")
+
+        Float32 = URIRef(NS + "Float32")
+        Float64 = URIRef(NS + "Float64")
+
+        ASCII   = URIRef(NS + "ASCII")
+
     class DCAT:
         NS = "http://www.w3.org/ns/dcat#"
 

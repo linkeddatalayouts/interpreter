@@ -1,10 +1,7 @@
+from lidl.Layout import LidlElement, create_element_with_type, get_element
+from lidl.NamespaceDefinitions import *
+
 from enum import Enum
-from rdflib import Graph, URIRef, Namespace, Literal
-from rdflib.namespace import RDF, RDFS, OWL
-
-from Layout import LidlElement, get_element, create_element_with_type
-
-from NamespaceDefinitions import *
 
 
 class TermType(Enum):

@@ -111,7 +111,7 @@ ppm:ImageDataLayout
       a lidl:Attribute  ;
       rdfs:label "PixelsAttribute" ;
       lidl:order 0 ;
-      lidl:count [ lidl:mul ( _:width _:height ) ] ;
+      lidl:count 128 ;
       lidl:layout ppm:Pixel
   ] .
 

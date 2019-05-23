@@ -1,9 +1,9 @@
 from flask import Flask
 
-from Layout import *
+from lidl.Layout import *
 
 
-from rdflib import Graph, URIRef, Literal, Namespace
+from rdflib import Graph, URIRef
 from rdflib.namespace import RDF, NamespaceManager
 
 
