@@ -1,8 +1,13 @@
-from .Mapping import Mapping, SubjectMap, PredicateObjectMap, ObjectMap
+from .Mapping import Mapping, SubjectMap, PredicateObjectMap, ObjectMap, TermType
 from .Layout import CompositeLayout, AtomicLayout, Attribute
-from rdflib import Literal
+from rdflib import URIRef, Literal, Graph, Namespace, BNode
+from rdflib.namespace import RDF, RDFS
+from .NamespaceDefinitions import *
+from uuid import uuid4
 
 from enum import Enum
+import struct
+from .ValueInstance import *
 
 
 class Evaluable(Enum):
@@ -16,31 +21,31 @@ def evaluate_atomic(atomicInstance, blob):
     endianness_fb = 'little'
     endianness_st = '<'
     # todo all types
-    if atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Bit:
+    if atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Bit:
         pass
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Byte:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Byte:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=True)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.ByteBoolean:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.ByteBoolean:
         return 0 == int.from_bytes(blob, byteorder=endianness_fb, signed=False)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.UInt8:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.UInt8:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=False)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Int8:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Int8:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=True)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.UInt16:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.UInt16:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=False)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Int16:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Int16:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=True)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.UInt32:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.UInt32:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=False)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Int32:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Int32:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=True)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.UInt64:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.UInt64:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=False)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Float32:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Float32:
         return struct.unpack(endianness_st + 'f', blob)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.Float64:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.Float64:
         return struct.unpack(endianness_st + 'd', blob)
-    elif atomicInstance.instanceOf.rdf_node == RDFNS.LIDL.ASCII:
+    elif atomicInstance.instance_of.rdf_node == RDFNS.LIDL.ASCII:
         return int.from_bytes(blob, byteorder=endianness_fb, signed=False)
 
     raise Exception('unsupported datatype')
@@ -87,10 +92,11 @@ class Offset(object):
     def __init__(self, bit_offset = None, byte_offset=None):
         self.bit_offset_relative = bit_offset
         self.byte_offset_relative = byte_offset
-
+        self.absolute_bit_offset = None
+        self.absolute_byte_offset = None
 
 class AttributeInstance(object):
-    def __init__(self, attribute):
+    def __init__(self, attribute, parent_layout_instance):
         self.instance_of = attribute
         self.offset2parent = Offset()
         self.bit_size = None
@@ -99,6 +105,7 @@ class AttributeInstance(object):
         self.count = None
         self.evaluable = None
         self.layout_instances = []
+        self.parent_layout_instance = parent_layout_instance
 
         self.count = self.instance_of.count
 
@@ -109,7 +116,7 @@ class AttributeInstance(object):
 
     def build_tree(self):
         for layout in self.instance_of.layouts:
-            instance = AtomicInstance(layout) if type(layout) is AtomicLayout else CompositeInstance(layout)
+            instance = AtomicInstance(layout,self) if type(layout) is AtomicLayout else CompositeInstance(layout,self)
             self.layout_instances.append(instance)
 
         for layout_instance in self.layout_instances:
@@ -135,30 +142,47 @@ class AttributeInstance(object):
             finished &= layout_instance.build_offsets()
         return finished
 
-    def evaluate(self):
+
+    def compute_absolute_addresses(self, parent_offset):
+        self.offset2parent.absolute_byte_offset = parent_offset.absolute_byte_offset \
+                                                + self.offset2parent.byte_offset_relative
+
+        for layout in self.layout_instances:
+            layout.compute_absolute_addresses(self.offset2parent)
+
+    def evaluate(self, blob):
+        if type(self.count) is not int or self.count > 1: #todo expressions
+            return True
+
+        if self.offset2parent.byte_offset_relative is None:
+            return False
+
         finished = True
         for layout_instance in self.layout_instances:
-            finished &= layout_instance.evaluate()
+            start = self.offset2parent.byte_offset_relative
+            end = start + self.byte_size
+            finished &= layout_instance.evaluate(blob[start:end])
 
         return finished
 
 
 class LayoutInstance(object):
-    def __init__(self, layout):
-        self.instanceOf = layout
+    def __init__(self, layout, parent_attribute_instance):
+        self.uuid = uuid4()
+        self.instance_of = layout
         self.bit_size = None
         self.byte_size = None
         self.is_array = None
         self.value = None
+        self.parent_attribute_instance = parent_attribute_instance
 
-        #if layout.static:
-        #    self.bit_size = layout.staticBitSize
-        #    self.byte_size = layout.staticByteSize
+    def find_attribute_instance(self,attribute):
+        paths_to_attribute = self.instance_of.attribute_scope
 
 
 class AtomicInstance(LayoutInstance):
-    def __init__(self, layout):
-        LayoutInstance.__init__(self, layout)
+    def __init__(self, layout, parent_attribute_instance):
+        LayoutInstance.__init__(self, layout, parent_attribute_instance)
 
         if layout.static:
             self.bit_size = layout.staticBitSize
@@ -168,9 +192,15 @@ class AtomicInstance(LayoutInstance):
         return
 
     def evaluate(self, blob):
-        slice = blob[0:self.byteSize]
+        if self.value:
+            return True
+        slice = blob[0:self.byte_size]
         value = evaluate_atomic(self, slice)
-        self.value.set_python_value(value)
+        self.value = ValueInstance()
+        self.value.set_python_value(value, self.instance_of.xsdType)
+
+        return True
+
 
     def build_sizes(self):
         return True
@@ -178,18 +208,20 @@ class AtomicInstance(LayoutInstance):
     def build_offsets(self):
         return True
 
+    def compute_absolute_addresses(self, parent_offset):
+        pass
 
 
 class CompositeInstance(LayoutInstance):
-    def __init__(self, layout):
-        LayoutInstance.__init__(self, layout)
+    def __init__(self, layout, parent_attribute_instance):
+        LayoutInstance.__init__(self, layout, parent_attribute_instance)
         self.ordered_attribute_lists = []
         self.attribute_instances = []
 
     def build_ordered_attribute_list(self):
         current_order = -1
         current_attribute_list = None
-        for attrib in self.instanceOf.ordered_attributes:
+        for attrib in self.instance_of.ordered_attributes:
             if attrib.order == current_order:
                 current_attribute_list.append(attrib)
             elif attrib.order > current_order:
@@ -207,16 +239,16 @@ class CompositeInstance(LayoutInstance):
             return True
 
         all_children_known = True
-        for attr_instance_list  in self.attribute_instances:
-            for attribute_instance in attr_instance_list :
+        for attr_instance_list in self.attribute_instances:
+            for attribute_instance in attr_instance_list:
                 all_children_known  &= attribute_instance.build_sizes()
 
         if all_children_known:
             self.byte_size = 0
             self.bit_size = 0
             for attr_instance_list in self.attribute_instances:
-                self.byte_size += attr_instance_list [0].byte_size
-                self.bit_size += attr_instance_list [0].bit_size
+                self.byte_size += attr_instance_list[0].byte_size
+                self.bit_size += attr_instance_list[0].bit_size
 
         return all_children_known
 
@@ -253,7 +285,18 @@ class CompositeInstance(LayoutInstance):
 
         return True
 
+    def compute_absolute_addresses(self, parent_offset):
+        for attr_instance_list in self.attribute_instances:
+            for attr_inst in attr_instance_list:
+                attr_inst.compute_absolute_addresses(parent_offset)
 
+    def evaluate(self, blob):
+        finished = True
+        for attr_instance_list in self.attribute_instances:
+            for attrib in attr_instance_list:
+                finished &= attrib.evaluate(blob)
+
+        return finished
 
 
     def build_tree(self):
@@ -262,7 +305,7 @@ class CompositeInstance(LayoutInstance):
         for attrib_list in self.ordered_attribute_lists:
             attribute_instance_list = []
             for attrib in attrib_list:
-                attribute_instance_list.append(AttributeInstance(attrib))
+                attribute_instance_list.append(AttributeInstance(attrib,self))
 
             self.attribute_instances.append(attribute_instance_list)
 
@@ -294,11 +337,95 @@ class CompositeInstance(LayoutInstance):
 
             return finished
 
-def interprete(blob, layout, mappings):
+def find_attribute_instance(layout_instance, attribute):
+    attribute_scope = layout_instance.instance_of.attribute_scope
+    attribute_paths = attribute_scope.get_paths_to_attribute(attribute)
+
+    attribute_instance = None
+    for path in attribute_paths:
+        up_count = path.count(None)
+        sub_path = path[up_count:]
+        attr_inst_root = layout_instance
+        while up_count > 0:
+            attr_inst_root = attr_inst_root.parent_attribute_instance\
+                                           .parent_layout_instance
+
+
+        while len(sub_path) > 0:
+            for attrib_lists in attr_inst_root.attribute_instances:
+                if len(sub_path) == 0:
+                    break;
+                for attrib_inst in attrib_lists:
+                    if attrib_inst.instance_of == sub_path[0]:
+                        sub_path = sub_path[1:]
+                        attr_inst_root = attrib_inst.layout_instances[0]
+
+                    if len(sub_path) == 0:
+                        break;
+
+
+
+
+        for attrib_lists in attr_inst_root.attribute_instances:
+            for attrib_inst in attrib_lists:
+                if attrib_inst.instance_of == attribute:
+                    return attrib_inst
+
+        return None
+
+
+def map2rdf(layout_instance, mappings, graph, layout_uri, term_type = None):
+    if type(layout_instance) is AtomicInstance:
+        return layout_instance.value.rdf_literal
+
+    if layout_instance.instance_of not in mappings:
+        return None
+
+    mapping = mappings[layout_instance.instance_of]
+
+
+    if term_type is None:
+        term_type = mapping.subject_map.term_type
+
+    if term_type == TermType.IRI:
+        layout_node = URIRef(str(layout_instance.uuid))
+    else:
+        layout_node = BNode()
+
+    if mapping.subject_map.rdf_class:
+        graph.add((layout_node, RDF.type, mapping.subject_map.rdf_class))
+
+    if mapping.raw_mapping:
+        offset = 0 if not layout_instance.parent_attribute_instance \
+                   else layout_instance.parent_attribute_instance.offset2parent.absolute_byte_offset
+
+        graph.add((layout_node, RDFNS.DCAT.byteSize, Literal(layout_instance.byte_size)))
+        slice_uri = layout_uri + "/slice?start=" + str(offset) + "&length=" + str(layout_instance.byte_size)
+        graph.add((layout_node, RDFNS.DCAT.downloadURL, URIRef(slice_uri)))
+        graph.add((layout_node, RDFNS.DCT.format, Literal("application/octet-stream")))
+
+    for po_map in mapping.predicate_object_map:
+        o_map  = po_map.object_map
+        if o_map.reference_attribute:
+            attribute_instance = find_attribute_instance(layout_instance, o_map.reference_attribute)
+            if attribute_instance is None:
+                continue
+
+            new_node = map2rdf(attribute_instance.layout_instances[0], mappings, graph, layout_uri, o_map.term_type)
+
+        else:
+            raise Exception('not yet supported')
+
+        if new_node is not None:
+            graph.add((layout_node, po_map.predicate, new_node))
+
+    return layout_node
+
+def interprete(blob, layout, mappings, service_uri = "http://localhost:8080"):
     if type(layout) is AtomicLayout:
         layout_instance = AtomicInstance(layout)
     elif type(layout) is CompositeLayout:
-        layout_instance = CompositeInstance(layout)
+        layout_instance = CompositeInstance(layout,None)
     else:
         return False
 
@@ -310,6 +437,17 @@ def interprete(blob, layout, mappings):
         reached_fixpoint = True
         reached_fixpoint &= layout_instance.build_sizes()
         reached_fixpoint &= layout_instance.build_offsets()
-        #reached_fixpoint &= layout_instance.evaluate()
+        reached_fixpoint &= layout_instance.evaluate(blob)
 
-    return None
+    root_offset = Offset()
+    root_offset.absolute_byte_offset = 0
+    layout_instance.compute_absolute_addresses(root_offset)
+
+    layout_uri = service_uri + "/" + str(layout_instance.uuid)
+    graph = Graph()
+    root_uri_ref = map2rdf(layout_instance, mappings, graph, layout_uri)
+
+
+    return graph
+
+

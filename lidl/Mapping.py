@@ -55,6 +55,7 @@ class PredicateObjectMap(LidlElement):
         self.predicate = graph.value(focus_node, RDFNS.R2RML.predicate)
         object_map_node = graph.value(focus_node, RDFNS.R2RML.objectMap)
         self.object_map = create_element_with_type(ObjectMap, object_map_node, graph)
+        print(self.predicate)
 
 
 class ObjectMap(LidlElement):
@@ -92,6 +93,7 @@ class Mapping(LidlElement):
         self.logical_source = None
         self.subject_map = None
         self.predicate_object_map = []
+        self.raw_mapping = False
 
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
@@ -108,14 +110,16 @@ class Mapping(LidlElement):
         for po_map_node in predicate_object_map_nodes:
             self.predicate_object_map.append(create_element_with_type(PredicateObjectMap, po_map_node , graph))
 
+        self.raw_mapping = len(predicate_object_map_nodes) == 0
+
     @staticmethod
     def check_rdf_constraints(focus_node, logical_source_node, predicate_object_map_nodes, subject_map_node):
         if logical_source_node is None:
             raise Exception("mapping without logical source: " + str(focus_node))
         if subject_map_node is None:
             raise Exception("mapping without subject map: " + str(focus_node))
-        if len(predicate_object_map_nodes) == 0:
-            raise Exception("mapping without predicate object map: " + str(focus_node))
+        #if len(predicate_object_map_nodes) == 0:
+        #    raise Exception("mapping without predicate object map: " + str(focus_node))
 
 
 def parse_mappings(graph):
@@ -123,10 +127,15 @@ def parse_mappings(graph):
     for s, o, p in graph.triples((None, RDFNS.RML.logicalSource, None)):
         if (s, RDFNS.R2RML.subjectMap, None ) not in graph:
             continue
-        if (s, RDFNS.R2RML.predicateObjectMap, None ) not in graph:
-            continue
+        #if (s, RDFNS.R2RML.predicateObjectMap, None ) not in graph:
+        #    continue
 
-        mapping_list.append(create_element_with_type(Mapping,s,graph))
+        mapping_list.append(create_element_with_type(Mapping, s, graph))
 
-    return mapping_list
+    mapping_dict = dict()
+    for mapping in mapping_list:
+        mapping_dict[mapping.logical_source.layout] = mapping
+    return mapping_dict
+
+
 

@@ -129,9 +129,55 @@ class LidlElement(object):
         self.label = graph.value(focus_node, RDFS.label)
 
 
+def path_order(a,b):
+    #less parents = higher prio
+    a_parent_count = a.count(None)
+    b_parent_count = b.count(None)
+
+    if (a_parent_count - b_parent_count) != 0:
+        return a_parent_count - b_parent_count
+
+    # with same name of parents: shorter path = higher prio
+    return len(a) - len(b)
+
+def cmp_to_key(mycmp):
+    'Convert a cmp= function into a key= function'
+    class K(object):
+        def __init__(self, obj, *args):
+            self.obj = obj
+        def __lt__(self, other):
+            return mycmp(self.obj, other.obj) < 0
+        def __gt__(self, other):
+            return mycmp(self.obj, other.obj) > 0
+        def __eq__(self, other):
+            return mycmp(self.obj, other.obj) == 0
+        def __le__(self, other):
+            return mycmp(self.obj, other.obj) <= 0
+        def __ge__(self, other):
+            return mycmp(self.obj, other.obj) >= 0
+        def __ne__(self, other):
+            return mycmp(self.obj, other.obj) != 0
+    return K
+
+
 class AttributeScope(object):
+    global_scope = None
+
     def __init__(self):
+        self.finished = False
         self.scope = dict()
+        self.parent_scopes = []
+        self.child_scopes = []
+        self.propagation_from_parent_blocked = False
+
+    def add_parent(self, parent, parent_attribute):
+        self.parent_scopes.append((parent_attribute,parent))
+
+        if parent:
+            parent.child_scopes.append((parent_attribute, self))
+
+        if len(self.parent_scopes) > 1:
+            self.propagation_from_parent_blocked = True
 
     def is_unique(self,attribute):
         if attribute in self.scope:
@@ -139,12 +185,51 @@ class AttributeScope(object):
         else:
             return False
 
-    def add(self,layout,attribute):
+    def get_paths_to_attribute(self,attribute):
+        if attribute in self.scope:
+            return self.scope[attribute]
+
+        return None
+
+    def add_attribute(self, attribute, path = []):
         if attribute not in self.scope:
             self.scope[attribute] = []
 
-        self.scope[attribute].append(layout)
+        self.scope[attribute].append(path)
 
+        for parent_attr, parent in self.parent_scopes:
+            parent.add_attribute(attribute, [parent_attr] + path)
+
+        for child_attr,child in self.child_scopes:
+            if len(path) > 0 and path[0] == child_attr:
+                continue
+
+            child.propagatation_from_parent(attribute, path)
+
+
+
+    def propagatation_from_parent(self, attribute, path):
+        if self.propagation_from_parent_blocked:
+            return
+
+        if attribute not in self.scope:
+            self.scope[attribute] = []
+        self.scope[attribute].append([None] + path)
+
+        for child_attr, child in self.child_scopes:
+            child.propagatation_from_parent(attribute, path)
+
+    def finish(self):
+        if self.finished:
+            return
+
+        for attribute, ref_lists in self.scope:
+            ref_lists.sort(key=cmp_to_key(path_order()))
+
+        for tmp, child in self.child_scopes:
+            child.finish()
+
+        self.finished = True
 
 class Layout(LidlElement):
     def __init__(self, rdf_node):
@@ -154,7 +239,7 @@ class Layout(LidlElement):
         self.staticBitSize = None
         self.staticByteSize = None
         self.static = None
-        self.attribute_scope = None
+        self.attribute_scope = AttributeScope()
 
     def from_rdf(self, focus_node, graph):
         super(Layout, self).from_rdf(focus_node, graph)
@@ -209,7 +294,10 @@ class AtomicLayout(Layout):
         self.contains_matching = False
         return True
 
-    def build_attribute_scope(self, scope):
+    def build_attribute_scope(self):
+        return
+
+    def fill_scopes(self):
         return
 
 
@@ -226,7 +314,6 @@ class Attribute(LidlElement):
         self.value_node = None
         self.static = None
         self.referenced_by = None
-        self.layout_scopes = None
 
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
@@ -269,18 +356,16 @@ class Attribute(LidlElement):
 
         return self.static
 
-    def build_attribute_scope(self, scope):
-
+    def build_attribute_scope(self, layout_scope):
         if len(self.layouts) == 1 and type(self.count) is int and self.count == 1:
-            self.layouts[0].build_attribute_scope(scope)
-            return
-
-        self.layout_scopes = []
+            self.layouts[0].attribute_scope.add_parent(layout_scope, self)
 
         for layout in self.layouts:
-            new_scope = AttributeScope()
-            self.layout_scopes.append(new_scope)
-            layout.build_attribute_scope(new_scope)
+            layout.build_attribute_scope()
+
+    def fill_scopes(self):
+        for layout in self.layouts:
+            layout.fill_scopes()
 
 
 class CompositeLayout(Layout):
@@ -321,18 +406,18 @@ class CompositeLayout(Layout):
                 self.staticBitSize += attribute_layout.staticBitSize * attribute.count
                 self.staticByteSize += attribute_layout.staticByteSize * attribute.count
 
-
         return self.static
 
+    def build_attribute_scope(self):
+        for attr in self.ordered_attributes:
+            attr.build_attribute_scope(self.attribute_scope)
 
-    def build_attribute_scope(self, scope):
+    def fill_scopes(self):
+        for attr in self.ordered_attributes:
+            self.attribute_scope.add_attribute(attr)
 
         for attr in self.ordered_attributes:
-            attr.build_attribute_scope(scope)
-            scope.add(self,attr)
-
-        self.attribute_scope = scope
-
+            attr.fill_scopes()
 
 
 class Expression(LidlElement):
