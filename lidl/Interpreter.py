@@ -426,7 +426,8 @@ def map2rdf(layout_instance, mappings, graph, layout_uri, term_type = None):
                 continue
 
             new_node = map2rdf(attribute_instance.layout_instances[0], mappings, graph, layout_uri, o_map.term_type)
-
+        elif o_map.constant:
+            new_node = o_map.constant
         else:
             raise Exception('not yet supported')
 
