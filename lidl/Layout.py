@@ -1,7 +1,7 @@
 from uuid import uuid4
 from enum import Enum
 from rdflib.namespace import RDF, RDFS
-from lidl import ValueInstance
+from .ValueInstance import ValueInstance
 
 from lidl.NamespaceDefinitions import *
 
@@ -469,6 +469,18 @@ class Expression(LidlElement):
                     raise Exception("found invalid argument at position: " + num + " in:" + str(focus_node))
                 self.arguments.append(argument)
 
+    def generate_arglist(self,attribute_mapping):
+        argument_values = []
+        for arg in self.arguments:
+            if type(arg) is Attribute:
+                argument_values.append(attribute_mapping[arg])
+            elif isinstance(arg, Expression):
+                argument_values.append(arg.compute(attribute_mapping))
+            else:
+                argument_values.append(arg)
+
+        return argument_values
+
     def compute_static(self):
         return False #todo think about that
 
@@ -484,9 +496,10 @@ class ExpressionAdd(Expression):
     def from_rdf(self, focus_node, graph):
         Expression.from_rdf(self, focus_node, graph)
 
-    def compute(self, argument_list):
-        value = argument_list[0]
-        for num, arg in enumerate(argument_list):
+    def compute(self, attribute_mapping):
+        argument_values = self.generate_arglist(attribute_mapping)
+        value = argument_values[0]
+        for num, arg in enumerate(argument_values):
             if num == 1:
                 continue
             value += arg
@@ -507,12 +520,13 @@ class ExpressionMinus(Expression):
         if self.arguments.len() > 2:
             raise Exception("Minus Expression takes only 2 arguments")
 
-    def compute(self, argument_list):
-        value = argument_list[0].python_value
-        for num, arg in enumerate(argument_list):
+    def compute(self, attribute_mapping):
+        argument_values = self.generate_arglist(attribute_mapping)
+        value = argument_values[0]
+        for num, arg in enumerate(argument_values):
             if num == 1:
                 continue
-            value -= arg.python_value
+            value -= arg
 
         result = ValueInstance()
         value.set_python_value(value)
@@ -526,15 +540,16 @@ class ExpressionMul(Expression):
     def __init__(self, rdf_node):
         Expression.__init__(self, rdf_node)
 
-    def compute(self, argument_list):
-        value = argument_list[0].python_value
-        for num, arg in enumerate(argument_list):
+    def compute(self, attribute_mapping):
+        argument_values = self.generate_arglist(attribute_mapping)
+        value = argument_values[0].python_value
+        for num, arg in enumerate(argument_values):
             if num == 1:
                 continue
             value *= arg.python_value
 
         result = ValueInstance()
-        value.set_python_value(value)
+        result.set_python_value(value, argument_values[0].rdf_datatype)
         return result
 
 
@@ -546,12 +561,13 @@ class ExpressionDiv(Expression):
     def __init__(self, rdf_node):
         Expression.__init__(self, rdf_node)
 
-    def compute(self, argument_list):
-        value = argument_list[0].python_value
-        for num, arg in enumerate(argument_list):
+    def compute(self, attribute_mapping):
+        argument_values = self.generate_arglist(attribute_mapping)
+        value = argument_values[0]
+        for num, arg in enumerate(argument_values):
             if num == 1:
                 continue
-            value /= arg.python_value
+            value /= arg
 
         result = ValueInstance()
         value.set_python_value(value)

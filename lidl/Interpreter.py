@@ -1,5 +1,5 @@
 from .Mapping import Mapping, SubjectMap, PredicateObjectMap, ObjectMap, TermType
-from .Layout import CompositeLayout, AtomicLayout, Attribute
+from .Layout import CompositeLayout, AtomicLayout, Attribute, Expression
 from rdflib import URIRef, Literal, Graph, Namespace, BNode
 from rdflib.namespace import RDF, RDFS
 from .NamespaceDefinitions import *
@@ -15,6 +15,42 @@ class Evaluable(Enum):
     NOT_EVALUABLE = 2
     UNKNOWN = 3
 
+
+
+def find_attribute_instance(layout_instance, attribute):
+    attribute_scope = layout_instance.instance_of.attribute_scope
+    attribute_paths = attribute_scope.get_paths_to_attribute(attribute)
+
+    for path in attribute_paths:
+        up_count = path.count(None)
+        sub_path = path[up_count:]
+        attr_inst_root = layout_instance
+        while up_count > 0:
+            attr_inst_root = attr_inst_root.parent_attribute_instance\
+                                           .parent_layout_instance
+            up_count -= 1
+
+        while len(sub_path) > 0:
+            for attrib_lists in attr_inst_root.attribute_instances:
+                if len(sub_path) == 0:
+                    break;
+                for attrib_inst in attrib_lists:
+                    if attrib_inst.instance_of == sub_path[0]:
+                        sub_path = sub_path[1:]
+                        attr_inst_root = attrib_inst.layout_instances[0]
+
+                    if len(sub_path) == 0:
+                        break;
+
+
+
+
+        for attrib_lists in attr_inst_root.attribute_instances:
+            for attrib_inst in attrib_lists:
+                if attrib_inst.instance_of == attribute:
+                    return attrib_inst
+
+        return None
 
 def evaluate_atomic(atomicInstance, blob):
     # todo endianess
@@ -52,40 +88,43 @@ def evaluate_atomic(atomicInstance, blob):
 
 
 class ExpressionInstance(object):
-    def __init__(self):
-        self.expression = None
-        self.argument_instances = []
-        self.result_value = None
+    def build(self, expression):
+        for arg in expression.arguments:
+            if type(arg) is Attribute:
+                self.referenced_attributes.append(arg)
+            elif type(arg) is Expression:
+                self.build(arg)
+
+
+
+    def __init__(self, expression):
+        self.expression = expression
+        self.referenced_attributes = []
         self.evaluable = None
 
-    def check_computable(self):
-        computable = True
+        self.build(self.expression)
 
-        for arg_instance in self.argument_instances:
-            computable &= type(arg_instance) is Value | \
-                          (type(arg_instance) is AttributeInstance and arg_instance.is_interpretable)
 
-    def compute(self):
-        if not self.evaluable:
-            return False
-        if self.result_value is not None:
-            return True
+    def evaluate(self, layout_instance):
 
-        arguments = []
-        for arg_instance in self.argument_instances:
-
-            if type(arg_instance) is Value:
-                value = arg_instance.python_value
-            elif type(arg_instance) is Value:
-                value = arg_instance.value.python_value
+        arguments = dict()
+        for arg in self.referenced_attributes:
+            arg_instance = find_attribute_instance(layout_instance, arg)
+            if arg_instance is None:
+                return None
+            if type(arg_instance) is ValueInstance:
+                value = arg_instance
+            elif type(arg_instance) is AttributeInstance:
+                value = arg_instance.layout_instances[0].value
             else:
                 raise Exception("only literals and atomics are supported as arguments in expressions")
 
             if value is None:
                 raise Exception("internal error! argument evaluated to None!")
 
-            arguments.append(value)
-        self.result_value = self.expression.compute(arguments)
+            arguments[arg] = value
+        return self.expression.compute(arguments)
+
 
 
 class Offset(object):
@@ -107,16 +146,19 @@ class AttributeInstance(object):
         self.layout_instances = []
         self.parent_layout_instance = parent_layout_instance
 
-        self.count = self.instance_of.count
-
-    def evaluate(self, blob):
-        if self.evaluable is None or self.evaluable == False or self.offset2parent.bit_offset_relative is None:
-            raise Exception("trying to evaluate an unevaluable attribute")
-        # todo check multiple layouts
+    #def evaluate(self, blob):
+    #    if self.evaluable is None or self.evaluable == False or self.offset2parent.bit_offset_relative is None:
+    #        raise Exception("trying to evaluate an unevaluable attribute")
+    #    # todo check multiple layouts
 
     def build_tree(self):
+        if isinstance(self.instance_of.count, Expression):
+            self.count = ExpressionInstance(self.instance_of.count)
+        else:
+            self.count = self.instance_of.count
+
         for layout in self.instance_of.layouts:
-            instance = AtomicInstance(layout,self) if type(layout) is AtomicLayout else CompositeInstance(layout,self)
+            instance = AtomicInstance(layout, self) if type(layout) is AtomicLayout else CompositeInstance(layout, self)
             self.layout_instances.append(instance)
 
         for layout_instance in self.layout_instances:
@@ -130,6 +172,10 @@ class AttributeInstance(object):
         for layout_instance in self.layout_instances:
             finished &= layout_instance.build_sizes()
 
+        if isinstance(self.count, ExpressionInstance):
+            return False
+
+
         if finished:
             self.bit_size  = self.count * self.layout_instances[0].bit_size
             self.byte_size = self.count * self.layout_instances[0].byte_size
@@ -142,7 +188,6 @@ class AttributeInstance(object):
             finished &= layout_instance.build_offsets()
         return finished
 
-
     def compute_absolute_addresses(self, parent_offset):
         self.offset2parent.absolute_byte_offset = parent_offset.absolute_byte_offset \
                                                 + self.offset2parent.byte_offset_relative
@@ -151,17 +196,23 @@ class AttributeInstance(object):
             layout.compute_absolute_addresses(self.offset2parent)
 
     def evaluate(self, blob):
-        if type(self.count) is not int or self.count > 1: #todo expressions
-            return True
-
         if self.offset2parent.byte_offset_relative is None:
             return False
+
+
+        if type(self.count) is ExpressionInstance:
+            result = self.count.evaluate(self.parent_layout_instance)
+            if result is None:
+                return False
+
+            self.count = result.python_value
+
+
 
         finished = True
         for layout_instance in self.layout_instances:
             start = self.offset2parent.byte_offset_relative
-            end = start + self.byte_size
-            finished &= layout_instance.evaluate(blob[start:end])
+            finished &= layout_instance.evaluate(blob[start:])
 
         return finished
 
@@ -176,8 +227,6 @@ class LayoutInstance(object):
         self.value = None
         self.parent_attribute_instance = parent_attribute_instance
 
-    def find_attribute_instance(self,attribute):
-        paths_to_attribute = self.instance_of.attribute_scope
 
 
 class AtomicInstance(LayoutInstance):
@@ -276,12 +325,12 @@ class CompositeInstance(LayoutInstance):
             for attr_inst in attr_instance_list:
                 attr_inst.offset2parent = current_offset
 
-            byte_size = self.get_consistant_size(attr_instance_list)
-            if byte_size is None:
-                return False #we are missing something
+                byte_size = self.get_consistant_size(attr_instance_list)
+                if byte_size is None:
+                    return False #we are missing something
 
-            #new offset
-            current_offset = Offset(0, current_offset.byte_offset_relative + byte_size)
+                #new offset
+                current_offset = Offset(0, current_offset.byte_offset_relative + byte_size)
 
         return True
 
@@ -337,41 +386,6 @@ class CompositeInstance(LayoutInstance):
 
             return finished
 
-def find_attribute_instance(layout_instance, attribute):
-    attribute_scope = layout_instance.instance_of.attribute_scope
-    attribute_paths = attribute_scope.get_paths_to_attribute(attribute)
-
-    attribute_instance = None
-    for path in attribute_paths:
-        up_count = path.count(None)
-        sub_path = path[up_count:]
-        attr_inst_root = layout_instance
-        while up_count > 0:
-            attr_inst_root = attr_inst_root.parent_attribute_instance\
-                                           .parent_layout_instance
-
-
-        while len(sub_path) > 0:
-            for attrib_lists in attr_inst_root.attribute_instances:
-                if len(sub_path) == 0:
-                    break;
-                for attrib_inst in attrib_lists:
-                    if attrib_inst.instance_of == sub_path[0]:
-                        sub_path = sub_path[1:]
-                        attr_inst_root = attrib_inst.layout_instances[0]
-
-                    if len(sub_path) == 0:
-                        break;
-
-
-
-
-        for attrib_lists in attr_inst_root.attribute_instances:
-            for attrib_inst in attrib_lists:
-                if attrib_inst.instance_of == attribute:
-                    return attrib_inst
-
-        return None
 
 
 def map2rdf(layout_instance, mappings, graph, layout_uri, term_type = None):
@@ -432,12 +446,16 @@ def interprete(blob, layout, mappings, service_uri = "http://localhost:8080"):
     layout_instance.build_tree()
 
     completed = False
+    counter = 0
     reached_fixpoint = False
     while not reached_fixpoint:
         reached_fixpoint = True
         reached_fixpoint &= layout_instance.build_sizes()
         reached_fixpoint &= layout_instance.build_offsets()
         reached_fixpoint &= layout_instance.evaluate(blob)
+
+        print("finished: " + str(counter))
+        counter += 1
 
     root_offset = Offset()
     root_offset.absolute_byte_offset = 0

@@ -11,10 +11,12 @@ class ValueInstance(object):
     def set_python_value(self,value,datatype):
         self.python_value = value
         self.rdf_literal = Literal(value, datatype=datatype)
-        self.python_value = datatype
+        self.rdf_datatype = datatype
+        pass
 
 
     def set_rdf_literal(self, value,datatype):
         self.rdf_literal = value
         self.rdf_datatype = datatype
         self.python_value = value.python_value
+        pass

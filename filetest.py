@@ -14,11 +14,12 @@ if __name__ == '__main__':
     testLayout.compute_static()
     testLayout.build_attribute_scope()
     testLayout.fill_scopes()
+
     mappings = parse_mappings(graph)
+
+
     blob = bytes(1792)
-
     imagesize = 4
-
     header = struct.pack('=ccIIB',b'P', b'6',4,4,255)
     blob = header
     pixel = struct.pack('=BBB',0,128,254)
