@@ -314,18 +314,17 @@ class Attribute(LidlElement):
         self.value_node = None
         self.static = None
         self.referenced_by = None
+        self.excluded_values = None
+        self.conditional = None
 
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
 
-        self.order       = graph.value(focus_node, RDFNS.LIDL.order)
         self.predicate   = graph.value(focus_node, RDFNS.LIDL.predicate)
         self.count_node  = graph.value(focus_node, RDFNS.LIDL.count)
         self.value_node   = graph.value(focus_node, RDFNS.LIDL.value)
         self.layout_nodes = list(graph.objects(focus_node, RDFNS.LIDL.layout))
-
-        if type(self.order) is not None:
-            self.order = int(self.order)
+        self.excluded_values = list(graph.objects(focus_node, RDFNS.LIDL.excludedValue))
 
         if type(self.count_node) is Literal:
             self.count = remove_literal(int, self.count_node)
@@ -333,9 +332,13 @@ class Attribute(LidlElement):
             self.count = create_element(self.count_node, graph)
 
         if type(self.value_node) is Literal:
-            self.value = self.value_node #todo this is not correct...
+            self.value = ValueInstance()
+            self.value.set_rdf_literal(self.value_node,self.value_node.datatype)
+            self.conditional = True
         elif self.value_node is not None:
-            self.value = create_element(self.value_node, graph)
+            raise Exception("only literals supported for attribute values")
+        else:
+            self.conditional = False
 
         for layout_node in self.layout_nodes:
             self.layouts.append(create_element(layout_node, graph))
@@ -377,16 +380,20 @@ class CompositeLayout(Layout):
     def from_rdf(self, focus_node, graph):
         LidlElement.from_rdf(self, focus_node, graph)
 
-        self.attribute_nodes = list(graph.objects(focus_node, RDFNS.LIDL.attribute))
+        attribute_nodes = graph.value(focus_node, RDFNS.LIDL.attribute)
+        if (attribute_nodes, RDF.type, RDFNS.LIDL.Attribute) in graph:
+            self.attribute_nodes = [attribute_nodes]
+        else:
+            while attribute_nodes != RDF.nil:
+                self.attribute_nodes.append(graph.value(attribute_nodes, RDF.first))
+                attribute_nodes = graph.value(attribute_nodes, RDF.rest)
 
-        for attribute_node in self.attribute_nodes:
+        for num, attribute_node in enumerate(self.attribute_nodes):
             attribute = create_element(attribute_node, graph, [Attribute])
-            if attribute.order is not None:
-                self.ordered_attributes.append(attribute)
-            else:
-                raise Exception("attribute without order not allowed")
+            attribute.order = num
+            self.ordered_attributes.append(attribute)
 
-        self.ordered_attributes.sort(key=lambda attr: attr.order)
+        pass
 
     def compute_static(self):
         if self.static is not None:

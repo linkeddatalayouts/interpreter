@@ -14,41 +14,50 @@
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix exif: <http://www.w3.org/2003/12/exif/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix ex: <https://github.com/linkeddatalayouts/vocabularies/blob/master/examples/ppm/> .
+@prefix ex: <http:/examp.ple> .
 
-<ImageLayoutMapping>
-  rml:logicalSource [
-    rml:source ex:rocket.ppm ;
-    rml:referenceFormulation ppm:ImageLayout ] ;
-  rr:subjectMap [
-    rr:termType rr:IRI ;
-    rr:class foaf:Image
-  ] ;
-  rr:predicateObjectMap [
-    rr:predicate exif:width ;
-    rr:objectMap [ rml:reference _:width ]
-  ] ;
-  rr:predicateObjectMap [
-    rr:predicate exif:height ;
-    rr:objectMap [ rml:reference _:height ]
-  ] ;
-  rr:predicateObjectMap [
-    rr:predicate ex:constantValue ;
-    rr:objectMap [ rr:constant <http://fancy.url> ]
-  ] ;
-  rr:predicateObjectMap [
-    rr:predicate img:pixels ;
-    rr:objectMap [ rml:reference ppm:ImageData ]
-  ] .
+ex:csvrow a lidl:Composite ;
+    rdfs:label "csv_row" ;
+    lidl:attribute ( [
+        a lidl:Attribute ;
+        lidl:label "cell";
+        lidl:layout _:csv_cell
+     ] [
+        a lidl:Attribute ;
+        lidl:count 1 ;
+        lidl:label "last cell";
+        lidl:layout _:csv_last_cell
+      ])
 
- <ImageDataMapping>
-  rml:logicalSource [
-    rml:source ex:rocket.ppm ;
-    rml:referenceFormulation ppm:ImageDataLayout ] ;
-    rr:subjectMap [
-        rr:termType rr:IRI ;
-        rr:class ppm:ImageData
-      ] .
+_:csv_cell a lidl:Composite ;
+    rdfs:label "csv cell" ;
+    lidl:attribute ([
+        a lidl:Attribute ;
+        lidl:label "string value";
+        lidl:layout lidl:ASCII,
+    ] [
+        a lidl:Attribute ;
+        lidl:count 1 ;
+        rdfs:label "comma" ;
+        lidl:layout lidl:ASCII ;
+        lidl:value ","
+    ] ).
+
+_:csv_last_cell lidl:Composite ;
+    rdfs:label "last cell" ;
+    lidl:attribute ([
+        a lidl:Attribute ;
+        lidl:label "string value";
+        lidl:layout lidl:ASCII
+        lidl:excludedValue ","
+    ] [
+        a lidl:Attribute ;
+        rdfs:label "line ending" ;
+        lidl:count 1
+        lidl:layout lidl:ASCII ;
+        lidl:value "\n"
+    ] ).
+
 
 ##################################################
 # PPM Image Layout
@@ -58,19 +67,19 @@ ppm:ImageLayout
   a lidl:Composite ;
   rdfs:label "ImageLayout" ;
   lidl:endianness lidl:LittleEndian ;
-  lidl:attribute ( ppm:Header  ppm:ImageData ) .
+  lidl:attribute ppm:Header , ppm:ImageData .
 
 ppm:Header
   a lidl:Attribute ;
   rdfs:label "Header" ;
-  #lidl:order 0 ;
+  lidl:order 0 ;
   lidl:count 1 ;
   lidl:layout ppm:HeaderLayout .
 
 ppm:ImageData
   a lidl:Attribute ;
   rdfs:label "ImageData" ;
-  #lidl:order 1;
+  lidl:order 1;
   lidl:count 1 ;
   lidl:layout ppm:ImageDataLayout .
 
@@ -81,12 +90,12 @@ ppm:ImageData
 ppm:HeaderLayout
   a lidl:Composite ;
   rdfs:label "HeaderLayout" ;
-  lidl:attribute (ppm:Magic _:width _:height ppm:MaxColorValue) .
+  lidl:attribute ppm:Magic , _:width , _:height , ppm:MaxColorValue .
 
 ppm:Magic
   a lidl:Attribute ;
   rdfs:label "Magic" ;
-  #lidl:order 0 ;
+  lidl:order 0 ;
   lidl:count 2 ;
   lidl:layout lidl:ASCII ;
   lidl:value "P6"^^xsd:string .
@@ -94,21 +103,21 @@ ppm:Magic
 _:width
   a lidl:Attribute  ;
   rdfs:label "Width" ;
-  #lidl:order 1 ;
+  lidl:order 1 ;
   lidl:count 1 ;
   lidl:layout lidl:UInt32 .
 
 _:height
   a lidl:Attribute  ;
   rdfs:label "Height" ;
-  #lidl:order 2 ;
+  lidl:order 2 ;
   lidl:count 1 ;
   lidl:layout lidl:UInt32 .
 
 ppm:MaxColorValue
   a lidl:Attribute  ;
   rdfs:label "MaxColorValue" ;
-  #lidl:order 3 ;
+  lidl:order 3 ;
   lidl:count 1 ;
   lidl:layout lidl:UInt8 .
 
@@ -122,7 +131,7 @@ ppm:ImageDataLayout
   lidl:attribute [
       a lidl:Attribute  ;
       rdfs:label "PixelsAttribute" ;
-      #lidl:order 0 ;
+      lidl:order 0 ;
       lidl:count [ lidl:mul (_:width _:height) ] ;
       lidl:layout ppm:Pixel
   ] .
@@ -133,7 +142,7 @@ ppm:Pixel
   lidl:attribute [
     a lidl:Attribute  ;
     rdfs:label "SubPixelsAttribute" ;
-    #lidl:order 0;
+    lidl:order 0;
     lidl:count 3 ;
     lidl:layout lidl:UInt8
   ] .

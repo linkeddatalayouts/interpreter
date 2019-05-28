@@ -6,8 +6,10 @@ from rdflib import Graph, URIRef
 import struct
 
 if __name__ == '__main__':
+    test_file = "test.ttl"#"csv.ttl"  # "test.ttl"
+    test_layout = "http://ppm.example.com/ns#ImageLayout" #"http:/examp.ple/csvrow"  # "http://ppm.example.com/ns#ImageLayout"
     graph = Graph()
-    graph.parse("test.ttl", format="turtle")
+    graph.parse(test_file, format="turtle")
     focusNode = URIRef("http://ppm.example.com/ns#ImageLayout")
     testLayout = create_element(focusNode, graph)
 

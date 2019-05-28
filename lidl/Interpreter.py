@@ -10,10 +10,10 @@ import struct
 from .ValueInstance import *
 
 
-class Evaluable(Enum):
-    EVALUABLE = 1
+class EvaluationResult(Enum):
+    FINISHED = 1
     NOT_EVALUABLE = 2
-    UNKNOWN = 3
+    NOT_FINISHED = 3
 
 
 
@@ -197,24 +197,44 @@ class AttributeInstance(object):
 
     def evaluate(self, blob):
         if self.offset2parent.byte_offset_relative is None:
-            return False
-
+            return EvaluationResult.NOT_FINISHED
 
         if type(self.count) is ExpressionInstance:
             result = self.count.evaluate(self.parent_layout_instance)
             if result is None:
-                return False
+                return EvaluationResult.NOT_FINISHED
 
             self.count = result.python_value
 
+        if self.instance_of.conditional:
+            if len(self.layout_instances) != 1 or type(self.layout_instances[0]) is not AtomicInstance:
+                raise Exception("invalid conditional attribute ")
 
+            bytes = self.instance_of.value.get_bytes(self.layout_instances[0].instance_of.rdf_node)
 
-        finished = True
-        for layout_instance in self.layout_instances:
-            start = self.offset2parent.byte_offset_relative
-            finished &= layout_instance.evaluate(blob[start:])
+            fulfilled = blob.startswith(bytes)
+            if not fulfilled:
+                return EvaluationResult.NOT_EVALUABLE
+            return EvaluationResult.FINISHED
 
-        return finished
+        else: # no conditional
+            finished = True
+            removed_layouts = []
+            for layout_instance in self.layout_instances:
+                start = self.offset2parent.byte_offset_relative
+                layout_result = layout_instance.evaluate(blob[start:])
+                if layout_result == EvaluationResult.NOT_EVALUABLE:
+                    removed_layouts.append(layout_instance)
+
+                finished &= (layout_result == EvaluationResult.FINISHED)
+
+            for layout_instance in removed_layouts:
+                self.layout_instances.remove(layout_instance)
+
+        if len(self.layout_instances) == 0:
+                return EvaluationResult.NOT_EVALUABLE
+
+        return EvaluationResult.FINISHED if finished else EvaluationResult.NOT_FINISHED
 
 
 class LayoutInstance(object):
@@ -242,13 +262,13 @@ class AtomicInstance(LayoutInstance):
 
     def evaluate(self, blob):
         if self.value:
-            return True
+            return EvaluationResult.FINISHED
         slice = blob[0:self.byte_size]
         value = evaluate_atomic(self, slice)
         self.value = ValueInstance()
         self.value.set_python_value(value, self.instance_of.xsdType)
 
-        return True
+        return EvaluationResult.FINISHED
 
 
     def build_sizes(self):
@@ -342,10 +362,23 @@ class CompositeInstance(LayoutInstance):
     def evaluate(self, blob):
         finished = True
         for attr_instance_list in self.attribute_instances:
-            for attrib in attr_instance_list:
-                finished &= attrib.evaluate(blob)
+            for num, attrib_inst in enumerate(attr_instance_list):
+                if attrib_inst.offset2parent.byte_offset_relative and \
+                   not attrib_inst.count:
+                    pass
 
-        return finished
+
+                attrib_result = attrib_inst.evaluate(blob)
+                if attrib_result == EvaluationResult.NOT_EVALUABLE:
+                    return EvaluationResult.NOT_EVALUABLE
+                finished &= (attrib_result == EvaluationResult.FINISHED)
+
+                if attrib_inst.instance_of.conditional:
+                    valid_layout = (attrib_result != EvaluationResult.NOT_EVALUABLE)
+                    if not valid_layout:
+                        return EvaluationResult.NOT_EVALUABLE
+
+        return EvaluationResult.FINISHED if finished else EvaluationResult.NOT_FINISHED
 
 
     def build_tree(self):
@@ -370,21 +403,7 @@ class CompositeInstance(LayoutInstance):
 
             return finished
 
-        def build_offsets(self):
-            finished = True
-            for attr_instance_list in self.attribute_instances:
-                for attr_instance in attr_instance_list:
-                    finished |= attr_instance.build_offsets()
 
-            return finished
-
-        def evaluate(self):
-            finished = True
-            for attr_instance_list in self.attribute_instances:
-                for attr_instance in attr_instance_list:
-                    finished |= attr_instance.evaluate()
-
-            return finished
 
 
 
@@ -396,7 +415,6 @@ def map2rdf(layout_instance, mappings, graph, layout_uri, term_type = None):
         return None
 
     mapping = mappings[layout_instance.instance_of]
-
 
     if term_type is None:
         term_type = mapping.subject_map.term_type
@@ -453,7 +471,10 @@ def interprete(blob, layout, mappings, service_uri = "http://localhost:8080"):
         reached_fixpoint = True
         reached_fixpoint &= layout_instance.build_sizes()
         reached_fixpoint &= layout_instance.build_offsets()
-        reached_fixpoint &= layout_instance.evaluate(blob)
+        evaluation_result = layout_instance.evaluate(blob)
+        if evaluation_result == EvaluationResult.NOT_EVALUABLE:
+            return None
+        reached_fixpoint &= (evaluation_result == EvaluationResult.FINISHED)
 
         print("finished: " + str(counter))
         counter += 1

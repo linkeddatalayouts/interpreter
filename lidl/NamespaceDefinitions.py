@@ -27,6 +27,7 @@ class RDFNS:
         layout          = URIRef(NS + "layout")
         count           = URIRef(NS + "count")
         value           = URIRef(NS + "value")
+        excludedValue   = URIRef(NS + "excludedValue")
 
         Expression      = URIRef(NS + "Expression")
         ArgumentList    = URIRef(NS + "ArgumentList")
@@ -84,6 +85,8 @@ class RDFNS:
         Float64 = URIRef(NS + "Float64")
 
         ASCII   = URIRef(NS + "ASCII")
+        UTF16  = URIRef(NS + "UTF16")
+        UTF32  = URIRef(NS + "UTF32")
 
     class DCAT:
         NS = "http://www.w3.org/ns/dcat#"
