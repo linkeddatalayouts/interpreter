@@ -31,24 +31,23 @@ def find_attribute_instance(layout_instance, attribute):
             up_count -= 1
 
         while len(sub_path) > 0:
-            for attrib_lists in attr_inst_root.attribute_instances:
+            for attrib_inst in attr_inst_root.attribute_instances:
                 if len(sub_path) == 0:
                     break;
-                for attrib_inst in attrib_lists:
-                    if attrib_inst.instance_of == sub_path[0]:
-                        sub_path = sub_path[1:]
-                        attr_inst_root = attrib_inst.layout_instances[0]
 
-                    if len(sub_path) == 0:
-                        break;
+                if attrib_inst.instance_of == sub_path[0]:
+                    sub_path = sub_path[1:]
+                    attr_inst_root = attrib_inst.layout_instances[0]
 
-
+                if len(sub_path) == 0:
+                    break;
 
 
-        for attrib_lists in attr_inst_root.attribute_instances:
-            for attrib_inst in attrib_lists:
-                if attrib_inst.instance_of == attribute:
-                    return attrib_inst
+
+
+        for attrib_inst in attr_inst_root.attribute_instances:
+            if attrib_inst.instance_of == attribute:
+                return attrib_inst
 
         return None
 
@@ -284,124 +283,79 @@ class AtomicInstance(LayoutInstance):
 class CompositeInstance(LayoutInstance):
     def __init__(self, layout, parent_attribute_instance):
         LayoutInstance.__init__(self, layout, parent_attribute_instance)
-        self.ordered_attribute_lists = []
         self.attribute_instances = []
 
-    def build_ordered_attribute_list(self):
-        current_order = -1
-        current_attribute_list = None
-        for attrib in self.instance_of.ordered_attributes:
-            if attrib.order == current_order:
-                current_attribute_list.append(attrib)
-            elif attrib.order > current_order:
-                if current_attribute_list is not None:
-                    self.ordered_attribute_lists.append(current_attribute_list)
-
-                current_order = attrib.order
-                current_attribute_list = [attrib]
-
-        if current_attribute_list is not None:
-            self.ordered_attribute_lists.append(current_attribute_list)
 
     def build_sizes(self):
         if self.bit_size or self.byte_size:
             return True
 
         all_children_known = True
-        for attr_instance_list in self.attribute_instances:
-            for attribute_instance in attr_instance_list:
-                all_children_known  &= attribute_instance.build_sizes()
+
+        for attribute_instance in self.attribute_instances:
+            all_children_known  &= attribute_instance.build_sizes()
 
         if all_children_known:
             self.byte_size = 0
             self.bit_size = 0
-            for attr_instance_list in self.attribute_instances:
-                self.byte_size += attr_instance_list[0].byte_size
-                self.bit_size += attr_instance_list[0].bit_size
+            for attr_instance in self.attribute_instances:
+                self.byte_size += attr_instance.byte_size
+                self.bit_size += attr_instance.bit_size
 
         return all_children_known
 
-    def get_consistant_size(self,attr_instance_list):
-        last_size = attr_instance_list[0].byte_size
-        if last_size is None:
-            return None
-
-        for attr_inst in attr_instance_list:
-            if attr_inst.byte_size is None:
-                return None
-            elif attr_inst.byte_size != last_size:
-                raise Exception("inconsistant size of attributes with same order!")
-
-        return last_size
 
     def build_offsets(self):
-        for attr_instance_list in self.attribute_instances:
-            for attr_inst in attr_instance_list:
-                attr_inst.build_offsets()
+        for attr_inst in self.attribute_instances:
+            attr_inst.build_offsets()
 
         current_offset = Offset(0,0)
 
-        for attr_instance_list in self.attribute_instances:
-            for attr_inst in attr_instance_list:
-                attr_inst.offset2parent = current_offset
+        for attr_inst in self.attribute_instances:
+            attr_inst.offset2parent = current_offset
 
-                byte_size = self.get_consistant_size(attr_instance_list)
-                if byte_size is None:
-                    return False #we are missing something
+            byte_size = attr_inst.byte_size
+            if byte_size is None:
+                return False #we are missing something
 
-                #new offset
-                current_offset = Offset(0, current_offset.byte_offset_relative + byte_size)
+            #new offset
+            current_offset = Offset(0, current_offset.byte_offset_relative + byte_size)
 
         return True
 
     def compute_absolute_addresses(self, parent_offset):
-        for attr_instance_list in self.attribute_instances:
-            for attr_inst in attr_instance_list:
-                attr_inst.compute_absolute_addresses(parent_offset)
+        for attr_inst in self.attribute_instances:
+            attr_inst.compute_absolute_addresses(parent_offset)
 
     def evaluate(self, blob):
         finished = True
-        for attr_instance_list in self.attribute_instances:
-            for num, attrib_inst in enumerate(attr_instance_list):
-                if attrib_inst.offset2parent.byte_offset_relative and \
-                   not attrib_inst.count:
-                    pass
+
+        for num, attrib_inst in enumerate(self.attribute_instances):
+            if attrib_inst.offset2parent.byte_offset_relative and \
+               not attrib_inst.count:
+                pass
 
 
-                attrib_result = attrib_inst.evaluate(blob)
-                if attrib_result == EvaluationResult.NOT_EVALUABLE:
+            attrib_result = attrib_inst.evaluate(blob)
+            if attrib_result == EvaluationResult.NOT_EVALUABLE:
+                return EvaluationResult.NOT_EVALUABLE
+            finished &= (attrib_result == EvaluationResult.FINISHED)
+
+            if attrib_inst.instance_of.conditional:
+                valid_layout = (attrib_result != EvaluationResult.NOT_EVALUABLE)
+                if not valid_layout:
                     return EvaluationResult.NOT_EVALUABLE
-                finished &= (attrib_result == EvaluationResult.FINISHED)
-
-                if attrib_inst.instance_of.conditional:
-                    valid_layout = (attrib_result != EvaluationResult.NOT_EVALUABLE)
-                    if not valid_layout:
-                        return EvaluationResult.NOT_EVALUABLE
 
         return EvaluationResult.FINISHED if finished else EvaluationResult.NOT_FINISHED
 
 
     def build_tree(self):
-        self.build_ordered_attribute_list()
-        # todo do not ignore attributes with same order
-        for attrib_list in self.ordered_attribute_lists:
-            attribute_instance_list = []
-            for attrib in attrib_list:
-                attribute_instance_list.append(AttributeInstance(attrib,self))
+        for attrib in self.instance_of.ordered_attributes:
+            self.attribute_instances.append(AttributeInstance(attrib,self))
 
-            self.attribute_instances.append(attribute_instance_list)
+        for attribute_instance in self.attribute_instances:
+            attribute_instance.build_tree()
 
-        for attribute_instance_list in self.attribute_instances:
-            for attribute_instance in attribute_instance_list:
-                attribute_instance.build_tree()
-
-        def build_sizes(self):
-            finished = True
-            for attr_instance_list in self.attribute_instances:
-                for attr_instance in attr_instance_list:
-                    finished |= attr_instance.build_sizes()
-
-            return finished
 
 
 
