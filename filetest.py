@@ -6,11 +6,11 @@ from rdflib import Graph, URIRef
 import struct
 
 if __name__ == '__main__':
-    test_file = "test.ttl"#"csv.ttl"  # "test.ttl"
-    test_layout = "http://ppm.example.com/ns#ImageLayout" #"http:/examp.ple/csvrow"  # "http://ppm.example.com/ns#ImageLayout"
+    test_file = "csv.ttl"  # "test.ttl"
+    test_layout = "http:/examp.ple/csvrow"  # "http://ppm.example.com/ns#ImageLayout"
     graph = Graph()
     graph.parse(test_file, format="turtle")
-    focusNode = URIRef("http://ppm.example.com/ns#ImageLayout")
+    focusNode = URIRef(test_layout)
     testLayout = create_element(focusNode, graph)
 
     testLayout.compute_static()
@@ -20,14 +20,17 @@ if __name__ == '__main__':
     mappings = parse_mappings(graph)
 
 
-    blob = bytes(1792)
-    imagesize = 4
-    header = struct.pack('=ccIIB',b'P', b'6',4,4,255)
-    blob = header
-    pixel = struct.pack('=BBB',0,128,254)
+    # blob = bytes(1792)
+    # imagesize = 4
+    # header = struct.pack('=ccIIB',b'P', b'6',4,4,255)
+    # blob = header
+    # pixel = struct.pack('=BBB',0,128,254)
+    #
+    # for i in range(imagesize*imagesize):
+    #     blob += pixel
 
-    for i in range(imagesize*imagesize):
-        blob += pixel
+    csv = "a,b,c,yeah\n"
+    blob = csv.encode(encoding="ascii")
 
     result = interprete(blob, testLayout, mappings)
     print(result.serialize('output.ttl', format='turtle'))

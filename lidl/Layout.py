@@ -328,7 +328,7 @@ class Attribute(LidlElement):
 
         if type(self.count_node) is Literal:
             self.count = remove_literal(int, self.count_node)
-        else:
+        elif self.count_node:
             self.count = create_element(self.count_node, graph)
 
         if type(self.value_node) is Literal:

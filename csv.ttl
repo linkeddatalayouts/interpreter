@@ -14,48 +14,78 @@
 @prefix dct: <http://purl.org/dc/terms/> .
 @prefix exif: <http://www.w3.org/2003/12/exif/ns#> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
-@prefix ex: <http:/examp.ple> .
+@prefix ex: <http:/examp.ple/> .
+
+ex:csv a lidlComposite ;
+    rdfs:label "csv" ;
+    lidl:attribute ( [
+        a lidl:Attribute ;
+        rdfs:label "row" ;
+        lidl:layout ex:csvrow
+    ] [
+        a lidl:Attribute ;
+        rdfs:label "last_row" ;
+        lidl:count 1 ;
+        lidl:layout ex:last_csvrow ,ex:csv_row
+    ] )
+
+
 
 ex:csvrow a lidl:Composite ;
     rdfs:label "csv_row" ;
     lidl:attribute ( [
         a lidl:Attribute ;
-        lidl:label "cell";
+        rdfs:label "cell";
+        lidl:layout _:csv_cell
+     ] [
+        a lidl:Attribute ;
+        rdfs:label "line ending" ;
+        lidl:count 1 ;
+        lidl:layout lidl:ASCII ;
+        lidl:value "\n", lidl:EOS
+    ] ) .
+
+ex:csvrow a lidl:Composite ;
+    rdfs:label "csv_row" ;
+    lidl:attribute ( [
+        a lidl:Attribute ;
+        rdfs:label "cell";
         lidl:layout _:csv_cell
      ] [
         a lidl:Attribute ;
         lidl:count 1 ;
-        lidl:label "last cell";
+        rdfs:label "last cell";
         lidl:layout _:csv_last_cell
-      ])
+     ]) .
 
 _:csv_cell a lidl:Composite ;
     rdfs:label "csv cell" ;
     lidl:attribute ([
         a lidl:Attribute ;
         lidl:label "string value";
-        lidl:layout lidl:ASCII,
+        lidl:layout lidl:ASCII
+        lidl:excludeValue ','
     ] [
         a lidl:Attribute ;
         lidl:count 1 ;
         rdfs:label "comma" ;
         lidl:layout lidl:ASCII ;
-        lidl:value ","
+        lidl:value ",", lidl:EOS
     ] ).
 
-_:csv_last_cell lidl:Composite ;
+_:csv_last_cell a lidl:Composite ;
     rdfs:label "last cell" ;
     lidl:attribute ([
         a lidl:Attribute ;
-        lidl:label "string value";
-        lidl:layout lidl:ASCII
-        lidl:excludedValue ","
+        rdfs:label "string value";
+        lidl:layout lidl:ASCII ;
+        lidl:excludeValue ","
     ] [
         a lidl:Attribute ;
         rdfs:label "line ending" ;
-        lidl:count 1
+        lidl:count 1 ;
         lidl:layout lidl:ASCII ;
-        lidl:value "\n"
+        lidl:value "\n", lidl:EOS
     ] ).
 
 

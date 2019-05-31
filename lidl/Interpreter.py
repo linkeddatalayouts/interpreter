@@ -133,6 +133,7 @@ class Offset(object):
         self.absolute_bit_offset = None
         self.absolute_byte_offset = None
 
+
 class AttributeInstance(object):
     def __init__(self, attribute, parent_layout_instance):
         self.instance_of = attribute
@@ -141,6 +142,7 @@ class AttributeInstance(object):
         self.byte_size = None
         self.is_evaluated = False
         self.count = None
+        self.min_count = None
         self.evaluable = None
         self.layout_instances = []
         self.parent_layout_instance = parent_layout_instance
@@ -173,7 +175,6 @@ class AttributeInstance(object):
 
         if isinstance(self.count, ExpressionInstance):
             return False
-
 
         if finished:
             self.bit_size  = self.count * self.layout_instances[0].bit_size
@@ -331,9 +332,9 @@ class CompositeInstance(LayoutInstance):
         finished = True
 
         for num, attrib_inst in enumerate(self.attribute_instances):
-            if attrib_inst.offset2parent.byte_offset_relative and \
-               not attrib_inst.count:
-                pass
+            if attrib_inst.offset2parent.byte_offset_relative and not attrib_inst.count:
+
+
 
 
             attrib_result = attrib_inst.evaluate(blob)
@@ -355,7 +356,6 @@ class CompositeInstance(LayoutInstance):
 
         for attribute_instance in self.attribute_instances:
             attribute_instance.build_tree()
-
 
 
 
